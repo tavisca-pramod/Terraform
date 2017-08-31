@@ -1,8 +1,5 @@
-provider "aws"{
- region = "ap-south-1"
-}
 data "template_file" "user_data" {
- template = "${file("user-data.sh")}"
+ template = "${file("${path.module}/user-data.sh")}"
 
  vars {
   db_address = "${data.terraform_remote_state.db.address}"
@@ -12,65 +9,56 @@ data "template_file" "user_data" {
 resource "aws_launch_configuration" "example" {
 
  image_id = "ami-47205e28"
- instance_type = "t2.micro"
+ instance_type = "${var.instance_type}"
  security_groups= ["${aws_security_group.instance.id}"]
  key_name = "rajshah-mumbai"
  user_data = "${data.template_file.user_data.rendered}"  
-	#	<<-EOF
-	#	#!/bin/bash
-	#	yum update -y
-	#	yum install httpd -y
-	#	service httpd start
-	#	chkconfig httpd on
-	#	echo "hello world" >> /var/www/html/index.html
-	#	echo "${data.terraform_remote_state.db.address}">> /var/www/html/index.html
-	#	echo "${data.terraform_remote_state.db.port}">> /var/www/html/index.html
-	#	EOF
 
  lifecycle {
   create_before_destroy = true
 }
 
 }
-
-#variable "server_port"{
-# description = "Enter the port for server HTTP requests"
-#}
-
 resource "aws_security_group" "instance" {
 
- name = "terraform-ASG-instance"
+ name = "${var.cluster_name}-instance"
+ lifecycle {
+ create_before_destroy = true
+}
+}
 
- ingress {
- from_port = "${var.server_port}"
- to_port = "${var.server_port}"
+resource "aws_security_group_rule" "allow_http_inbound_instance" {
+ type = "ingress"
+ security_group_id = "${aws_security_group.instance.id}"
+ from_port = "80"
+ to_port = "80"
  protocol = "tcp"
  cidr_blocks = ["0.0.0.0/0"]
 }
- ingress {
+
+resource "aws_security_group_rule" "allow_ssh_inbound_instance" {
+ type = "ingress"
+ security_group_id = "${aws_security_group.instance.id}"
  from_port = 22
  to_port = 22
  protocol = "tcp"
  cidr_blocks = ["0.0.0.0/0"]
 }
- egress {
+ resource "aws_security_group_rule" "allow_all_outbound_instance"{
+ type = "egress"
+ security_group_id = "${aws_security_group.instance.id}"
  from_port = 0
  to_port = 0
  protocol = "-1"
  cidr_blocks = ["0.0.0.0/0"]
 }
 
- lifecycle {
- create_before_destroy = true
-}
-}
-
  data "aws_availability_zones" "all"{} 
  data "terraform_remote_state" "db"{
   backend = "s3"
   config {
-   bucket = "terraform-rajshah"
-   key = "stage/data-stores/mysql/terraform.tfstate"
+   bucket = "${var.db_remote_state_bucket}"
+   key = "${var.db_remote_state_key}"
    region = "ap-south-1"
 }
 }
@@ -82,18 +70,18 @@ resource "aws_security_group" "instance" {
  load_balancers = ["${aws_elb.example.name}"]
  health_check_type = "ELB"
 
- min_size = 2
- max_size = 4
+ min_size = "${var.min_size}"
+ max_size = "${var.max_size}"
  tag {
   key = "Name"
-  value = "terraform_ASG_example"
+  value = "${var.cluster_name}"
   propagate_at_launch = true
 }
 
 }
 
  resource "aws_elb" "example"{
-  name = "terraform-ASG-example"
+  name = "${var.cluster_name}"
   availability_zones = ["${data.aws_availability_zones.all.names}"]
   security_groups = ["${aws_security_group.elb.id}"]
   listener {
@@ -113,22 +101,25 @@ resource "aws_security_group" "instance" {
 }
 }
  resource "aws_security_group" "elb" {
- name = "terraform-elb-SG"
+ name = "${var.cluster_name}-elb"
+}
 
- ingress {
+ resource " aws_security_group_rule" "allow_http_inbound_elb"{
+  type = "ingress"
+  security_group_id = "${aws_security_group.elb.id}" 
   from_port = 80
   to_port = 80
   protocol = "tcp"
   cidr_blocks = ["0.0.0.0/0"]
 }
- egress {
+
+ resource "aws_security_group_rule" "allow_all_outbound_elb"{
+  type = "egress"
+  security_group_id = "${aws_security_group.elb.id}" 
   from_port = 0
   to_port = 0
   protocol = "-1"
   cidr_blocks = ["0.0.0.0/0"]
 }
-}
 
- #output "elb_dns_name"{
-# value = "${aws_elb.example.dns_name}"
-#}
+

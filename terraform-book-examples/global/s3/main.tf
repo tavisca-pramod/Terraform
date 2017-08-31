@@ -13,7 +13,7 @@ resource "aws_s3_bucket" "terraform-rajshah" {
 }
 }
 
-output "s3_bucket_arn"{
- value = "aws_s3_bucket.terraform-rajshah.arn"
+#output "s3_bucket_arn"{
+# value = "aws_s3_bucket.terraform-rajshah.arn"
 
-}
+#}
